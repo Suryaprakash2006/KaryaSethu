@@ -4,12 +4,17 @@ const { load } = require("../db");
 // secure and must never be used in production - it's here purely so the
 // hackathon demo can log in as multiple people (household / worker /
 // federation admin) from different browser tabs.
-module.exports = function requireAuth(req, res, next) {
+module.exports = async function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : header;
   if (!token) return res.status(401).json({ error: "Not authenticated" });
 
-  const db = load();
+  let db;
+  try {
+    db = await load();
+  } catch (error) {
+    return next(error);
+  }
   if (token.startsWith("federation:")) {
     const federationId = Number(token.slice("federation:".length));
     const federation = db.federations.find((f) => f.id === federationId);

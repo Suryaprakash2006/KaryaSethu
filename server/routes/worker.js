@@ -19,42 +19,54 @@ function findBooking(db, id, workerId) {
   return db.bookings.find((b) => b.id === id && b.assignedWorkerId === workerId);
 }
 
-router.put("/profile", (req, res) => {
-  const { profession, experienceYears } = req.body || {};
-  const db = req.db;
-  const profile = getProfile(db, req.user.id);
-  if (profession) profile.profession = profession;
-  if (experienceYears !== undefined) profile.experienceYears = Number(experienceYears) || 0;
-  save(db);
-  res.json(profile);
+router.put("/profile", async (req, res, next) => {
+  try {
+    const { profession, experienceYears } = req.body || {};
+    const db = req.db;
+    const profile = getProfile(db, req.user.id);
+    if (profession) profile.profession = profession;
+    if (experienceYears !== undefined) profile.experienceYears = Number(experienceYears) || 0;
+    await save(db);
+    res.json(profile);
+  } catch (error) {
+    next(error);
+  }
 });
 
-router.post("/aadhaar-verify", (req, res) => {
-  const { aadhaarNumber } = req.body || {};
-  const digits = (aadhaarNumber || "").replace(/\s/g, "");
-  if (digits.length !== 12 || !/^\d+$/.test(digits)) {
-    return res.status(400).json({ error: "Enter a valid 12-digit Aadhaar number" });
+router.post("/aadhaar-verify", async (req, res, next) => {
+  try {
+    const { aadhaarNumber } = req.body || {};
+    const digits = (aadhaarNumber || "").replace(/\s/g, "");
+    if (digits.length !== 12 || !/^\d+$/.test(digits)) {
+      return res.status(400).json({ error: "Enter a valid 12-digit Aadhaar number" });
+    }
+    const db = req.db;
+    const profile = getProfile(db, req.user.id);
+    profile.aadhaarNumber = `XXXX XXXX ${digits.slice(-4)}`;
+    profile.aadhaarVerified = true;
+    await save(db);
+    res.json(profile);
+  } catch (error) {
+    next(error);
   }
-  const db = req.db;
-  const profile = getProfile(db, req.user.id);
-  profile.aadhaarNumber = `XXXX XXXX ${digits.slice(-4)}`;
-  profile.aadhaarVerified = true;
-  save(db);
-  res.json(profile);
 });
 
-router.patch("/duty", (req, res) => {
-  const { onDuty } = req.body || {};
-  const db = req.db;
-  const profile = getProfile(db, req.user.id);
-  if (onDuty) {
-    if (!profile.aadhaarVerified) return res.status(400).json({ error: "Complete Aadhaar verification first" });
-    if (!profile.profession) return res.status(400).json({ error: "Complete your profession details first" });
-    if (!profile.federationId) return res.status(400).json({ error: "Join a federation before going on duty" });
+router.patch("/duty", async (req, res, next) => {
+  try {
+    const { onDuty } = req.body || {};
+    const db = req.db;
+    const profile = getProfile(db, req.user.id);
+    if (onDuty) {
+      if (!profile.aadhaarVerified) return res.status(400).json({ error: "Complete Aadhaar verification first" });
+      if (!profile.profession) return res.status(400).json({ error: "Complete your profession details first" });
+      if (!profile.federationId) return res.status(400).json({ error: "Join a federation before going on duty" });
+    }
+    profile.onDuty = !!onDuty;
+    await save(db);
+    res.json(profile);
+  } catch (error) {
+    next(error);
   }
-  profile.onDuty = !!onDuty;
-  save(db);
-  res.json(profile);
 });
 
 router.get("/incoming", (req, res) => {
@@ -80,66 +92,90 @@ router.get("/history", (req, res) => {
   );
 });
 
-router.post("/bookings/:id/accept", (req, res) => {
-  const db = req.db;
-  const booking = findBooking(db, Number(req.params.id), req.user.id);
-  if (!booking || booking.status !== "assigned") return res.status(400).json({ error: "Job not available to accept" });
-  booking.status = "accepted";
-  save(db);
-  res.json(booking);
-});
-
-router.post("/bookings/:id/decline", (req, res) => {
-  const db = req.db;
-  const booking = findBooking(db, Number(req.params.id), req.user.id);
-  if (!booking || booking.status !== "assigned") return res.status(400).json({ error: "Job not available to decline" });
-  assignCandidate(db, booking, req.user.id);
-  save(db);
-  res.json(booking);
-});
-
-router.post("/bookings/:id/expenses", (req, res) => {
-  const { label, amount } = req.body || {};
-  const db = req.db;
-  const booking = findBooking(db, Number(req.params.id), req.user.id);
-  if (!booking || !["accepted", "awaiting_approval"].includes(booking.status)) {
-    return res.status(400).json({ error: "Cannot add expenses at this stage" });
+router.post("/bookings/:id/accept", async (req, res, next) => {
+  try {
+    const db = req.db;
+    const booking = findBooking(db, Number(req.params.id), req.user.id);
+    if (!booking || booking.status !== "assigned") return res.status(400).json({ error: "Job not available to accept" });
+    booking.status = "accepted";
+    await save(db);
+    res.json(booking);
+  } catch (error) {
+    next(error);
   }
-  const amt = Number(amount);
-  if (!label || !amt || amt <= 0) return res.status(400).json({ error: "Enter a valid expense label and amount" });
-
-  booking.extraExpenses.push({ label, amount: amt });
-  booking.estimatedCost = booking.baseServicePrice + booking.extraExpenses.reduce((s, e) => s + e.amount, 0);
-  save(db);
-  res.json(booking);
 });
 
-router.post("/bookings/:id/send-estimate", (req, res) => {
-  const db = req.db;
-  const booking = findBooking(db, Number(req.params.id), req.user.id);
-  if (!booking || booking.status !== "accepted") return res.status(400).json({ error: "Cannot send estimate at this stage" });
-  if (booking.extraExpenses.length === 0) return res.status(400).json({ error: "Add at least one expense before sending an estimate" });
-  booking.status = "awaiting_approval";
-  save(db);
-  res.json(booking);
+router.post("/bookings/:id/decline", async (req, res, next) => {
+  try {
+    const db = req.db;
+    const booking = findBooking(db, Number(req.params.id), req.user.id);
+    if (!booking || booking.status !== "assigned") return res.status(400).json({ error: "Job not available to decline" });
+    assignCandidate(db, booking, req.user.id);
+    await save(db);
+    res.json(booking);
+  } catch (error) {
+    next(error);
+  }
 });
 
-router.post("/bookings/:id/start", (req, res) => {
-  const db = req.db;
-  const booking = findBooking(db, Number(req.params.id), req.user.id);
-  if (!booking || booking.status !== "accepted") return res.status(400).json({ error: "Cannot start work at this stage" });
-  booking.status = "in_progress";
-  save(db);
-  res.json(booking);
+router.post("/bookings/:id/expenses", async (req, res, next) => {
+  try {
+    const { label, amount } = req.body || {};
+    const db = req.db;
+    const booking = findBooking(db, Number(req.params.id), req.user.id);
+    if (!booking || !["accepted", "awaiting_approval"].includes(booking.status)) {
+      return res.status(400).json({ error: "Cannot add expenses at this stage" });
+    }
+    const amt = Number(amount);
+    if (!label || !amt || amt <= 0) return res.status(400).json({ error: "Enter a valid expense label and amount" });
+
+    booking.extraExpenses.push({ label, amount: amt });
+    booking.estimatedCost = booking.baseServicePrice + booking.extraExpenses.reduce((s, e) => s + e.amount, 0);
+    await save(db);
+    res.json(booking);
+  } catch (error) {
+    next(error);
+  }
 });
 
-router.post("/bookings/:id/complete", (req, res) => {
-  const db = req.db;
-  const booking = findBooking(db, Number(req.params.id), req.user.id);
-  if (!booking || booking.status !== "in_progress") return res.status(400).json({ error: "Cannot complete at this stage" });
-  booking.status = "completed";
-  save(db);
-  res.json(booking);
+router.post("/bookings/:id/send-estimate", async (req, res, next) => {
+  try {
+    const db = req.db;
+    const booking = findBooking(db, Number(req.params.id), req.user.id);
+    if (!booking || booking.status !== "accepted") return res.status(400).json({ error: "Cannot send estimate at this stage" });
+    if (booking.extraExpenses.length === 0) return res.status(400).json({ error: "Add at least one expense before sending an estimate" });
+    booking.status = "awaiting_approval";
+    await save(db);
+    res.json(booking);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/bookings/:id/start", async (req, res, next) => {
+  try {
+    const db = req.db;
+    const booking = findBooking(db, Number(req.params.id), req.user.id);
+    if (!booking || booking.status !== "accepted") return res.status(400).json({ error: "Cannot start work at this stage" });
+    booking.status = "in_progress";
+    await save(db);
+    res.json(booking);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/bookings/:id/complete", async (req, res, next) => {
+  try {
+    const db = req.db;
+    const booking = findBooking(db, Number(req.params.id), req.user.id);
+    if (!booking || booking.status !== "in_progress") return res.status(400).json({ error: "Cannot complete at this stage" });
+    booking.status = "completed";
+    await save(db);
+    res.json(booking);
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;

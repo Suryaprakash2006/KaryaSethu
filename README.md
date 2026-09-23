@@ -66,7 +66,7 @@ flowchart LR
   UI --> API[Express REST API]
   API --> AUTH[Role-aware authentication]
   API --> MATCH[Worker matching service]
-  API --> DB[(JSON file database)]
+  API --> DB[(MongoDB)]
   API --> FUNDS[Wallet and federation funds]
 ```
 
@@ -77,7 +77,7 @@ flowchart LR
 | Frontend | React 18, React Router, Vite |
 | UI | Tailwind CSS utility classes, Lucide icons |
 | Backend | Node.js, Express 4 |
-| Persistence | Local JSON file (`server/data.json`) |
+| Persistence | MongoDB with legacy JSON migration |
 | Authentication | Password hashing with Node `crypto.scryptSync` |
 | API style | JSON REST endpoints |
 
@@ -97,10 +97,10 @@ karya-sethu-fullstack/
 ├── server/
 │   ├── middleware/            Authentication middleware
 │   ├── routes/                Auth, booking, worker, and federation APIs
-│   ├── data.json              Local runtime database, ignored by Git
+│   ├── data.json              Legacy migration source and local backup
 │   ├── matching.js            Worker matching logic
 │   ├── services.js             Service catalogue
-│   ├── db.js                  JSON database helpers
+│   ├── db.js                  MongoDB connection and migration helpers
 │   └── index.js               Express application entry point
 ├── .gitignore
 └── README.md
@@ -112,6 +112,7 @@ karya-sethu-fullstack/
 
 - Node.js 18 or newer
 - npm
+- MongoDB 6 or newer, either local or MongoDB Atlas
 
 ### 1. Install server dependencies
 
@@ -121,6 +122,16 @@ npm install
 ```
 
 ### 2. Start the API
+
+Create `server/.env` with your MongoDB connection details:
+
+```env
+MONGO_URI=mongodb://127.0.0.1:27017
+MONGO_DB_NAME=karya_sethu
+PORT=4000
+```
+
+For MongoDB Atlas, replace `MONGO_URI` with your Atlas connection string. Never commit this file.
 
 ```bash
 npm run dev
@@ -188,14 +199,29 @@ All protected requests use the prototype session token in the `Authorization` he
 Authorization: Bearer <token>
 ```
 
+## MongoDB Migration and Data Preservation
+
+The server now uses MongoDB collections instead of the JSON file at runtime:
+
+| Collection | Legacy data preserved |
+| --- | --- |
+| `users` | Household and worker accounts |
+| `workerProfiles` | Worker profiles, wallets, duty, and federation membership |
+| `federations` | Federation details, funds, ledgers, and announcements |
+| `joinRequests` | Federation membership requests |
+| `bookings` | Service bookings and payment history |
+| `disputes` | Booking disputes and resolutions |
+
+On the first successful server startup, the application imports the existing `server/data.json` into MongoDB. The original numeric IDs and `nextId` sequence are preserved, and a migration marker prevents duplicate imports on later starts. The JSON file is not deleted, so it remains available as an untouched backup.
+
 ## Data and Security Notes
 
 This is a hackathon/demo prototype, not a production deployment.
 
-- The JSON file database is useful for local demos and is intentionally ignored by Git.
+- MongoDB is required for runtime persistence; `server/data.json` is retained only as the legacy migration source and local backup.
 - Authentication tokens are prototype-grade identifiers, not production JWTs or server-side sessions.
 - Payments, Aadhaar verification, distance calculations, and matching are mocked or simplified.
-- Uploaded images are held as base64 data in the JSON database.
+- Uploaded images are currently held as base64 data in MongoDB documents.
 - For production, use a real database, secure session or JWT handling, input validation, object storage, rate limiting, HTTPS, and a real payment provider.
 
 
