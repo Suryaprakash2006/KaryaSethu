@@ -29,7 +29,7 @@ function isFederationAdmin(req, fedId) {
 
 router.get("/", async (req, res, next) => {
   try {
-    const db = await load();
+    const db = await load(["users", "workerProfiles", "federations"]);
     res.json(db.federations.map((f) => summarize(f, db)));
   } catch (error) {
     next(error);

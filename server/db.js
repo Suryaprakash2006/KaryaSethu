@@ -19,6 +19,7 @@ const empty = {
 
 let clientPromise;
 let migrationPromise;
+let indexesPromise;
 
 function localSnapshot() {
   if (!fs.existsSync(DB_PATH)) fs.writeFileSync(DB_PATH, JSON.stringify(empty, null, 2));
@@ -59,15 +60,35 @@ async function initialize() {
   const db = await getDatabase();
   if (!migrationPromise) migrationPromise = migrateLegacyData(db);
   await migrationPromise;
+  if (!indexesPromise) indexesPromise = createIndexes(db);
+  await indexesPromise;
   return db;
 }
 
-async function load() {
+async function createIndexes(db) {
+  await Promise.all([
+    db.collection("users").createIndex({ id: 1 }, { unique: true }),
+    db.collection("users").createIndex({ email: 1 }, { unique: true }),
+    db.collection("users").createIndex({ phone: 1 }, { unique: true }),
+    db.collection("workerProfiles").createIndex({ userId: 1 }, { unique: true }),
+    db.collection("workerProfiles").createIndex({ federationId: 1 }),
+    db.collection("bookings").createIndex({ id: 1 }, { unique: true }),
+    db.collection("bookings").createIndex({ householdUserId: 1, createdAt: -1 }),
+    db.collection("bookings").createIndex({ assignedWorkerId: 1, status: 1 }),
+    db.collection("federations").createIndex({ id: 1 }, { unique: true }),
+    db.collection("joinRequests").createIndex({ federationId: 1, status: 1 }),
+    db.collection("disputes").createIndex({ federationId: 1, status: 1 }),
+  ]);
+}
+
+async function load(collectionNames = COLLECTIONS) {
   const db = await initialize();
-  const documents = await Promise.all(COLLECTIONS.map((name) => db.collection(name).find({}).toArray()));
+  const documents = await Promise.all(
+    collectionNames.map((name) => db.collection(name).find({}, { projection: { _id: 0 } }).toArray())
+  );
   const settings = await db.collection("settings").findOne({ _id: "counter" });
   return Object.fromEntries([
-    ...COLLECTIONS.map((name, index) => [name, documents[index]]),
+    ...collectionNames.map((name, index) => [name, documents[index]]),
     ["nextId", settings?.nextId || 1],
   ]);
 }
@@ -75,7 +96,7 @@ async function load() {
 async function save(snapshot) {
   const db = await initialize();
   await Promise.all(
-    COLLECTIONS.map(async (name) => {
+    COLLECTIONS.filter((name) => Object.prototype.hasOwnProperty.call(snapshot, name)).map(async (name) => {
       const collection = db.collection(name);
       await collection.deleteMany({});
       if (snapshot[name]?.length) await collection.insertMany(snapshot[name]);
@@ -94,5 +115,5 @@ function nextId(snapshot) {
   return id;
 }
 
-module.exports = { initialize, load, save, nextId };
+module.exports = { initialize, load, save, nextId, getDatabase };
 

@@ -20,7 +20,7 @@ router.post("/signup", async (req, res, next) => {
       return res.status(400).json({ error: "role must be household or worker" });
     }
 
-    const db = await load();
+    const db = await load(["users", "workerProfiles"]);
     const exists = db.users.find((u) => u.email === email || u.phone === phone);
     if (exists) {
       return res.status(409).json({ error: "An account with this email or phone already exists" });
@@ -69,7 +69,7 @@ router.post("/login", async (req, res, next) => {
     if (!identifier || !password) {
       return res.status(400).json({ error: "identifier and password are required" });
     }
-    const db = await load();
+    const db = await load(["users"]);
     const user = db.users.find((u) => u.email === identifier || u.phone === identifier);
     if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
@@ -93,7 +93,7 @@ router.post("/federation-login", async (req, res, next) => {
       return res.status(400).json({ error: "identifier and password are required" });
     }
 
-    const db = await load();
+    const db = await load(["users", "workerProfiles", "federations"]);
     const user = db.users.find((u) => u.email === identifier || u.phone === identifier);
     if (!user || user.role !== "worker") {
       return res.status(401).json({ error: "Invalid federation credentials" });

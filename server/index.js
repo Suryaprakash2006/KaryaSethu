@@ -7,6 +7,15 @@ const { initialize } = require("./db");
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "6mb" })); // 6mb to comfortably fit a base64 photo
+app.use((req, res, next) => {
+  if (process.env.PERF_LOG !== "1") return next();
+  const startedAt = process.hrtime.bigint();
+  res.on("finish", () => {
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    console.log(`[perf] ${req.method} ${req.originalUrl} ${elapsedMs.toFixed(1)}ms`);
+  });
+  next();
+});
 
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/services", require("./routes/services"));
