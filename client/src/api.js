@@ -1,4 +1,4 @@
-const BASE = "http://localhost:4000/api";
+const BASE = "https://karyasethu.onrender.com/api";
 
 function authHeaders() {
   const token = localStorage.getItem("ks_token");
